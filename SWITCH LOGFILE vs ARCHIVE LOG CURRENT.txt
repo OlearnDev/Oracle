@@ -1,0 +1,82 @@
+SWITCH LOGFILE vs ARCHIVE LOG CURRENT:
+1. No-Wait vs Wait
+The first difference is the responses. ALTER SYSTEM SWITCH LOGFILE is a no-wait statement, once it was issued by DBA, it'll 
+return to the user and do the switching in the background. On the other side, ALTER SYSTEM ARCHIVE LOG CURRENT will wait for 
+Archiver Process (ARCH) to complete the archiving and then return to user.
+
+SQL> set timing on;
+SQL> alter system switch logfile;
+System altered.
+Elapsed: 00:00:00.04
+
+SQL> alter system archive log current;
+System altered.
+Elapsed: 00:00:00.12
+
+2. Data Guard
+A big difference can be seen in data guard environments, especially in 9i.
+
+SQL> alter system archive log current;
+System altered.
+Elapsed: 00:01:46.87
+
+As you can see, ALTER SYSTEM ARCHIVE LOG CURRENT takes almost 2 minutes for a 1GB redo logs to return. This is because it's 
+waiting for the completion of network transferring and archiving on the remote standby database. Also, the larger redo size, 
+the longer it takes.
+
+3. RAC Database
+For a cluster database, statement ALTER SYSTEM SWITCH LOGFILE affects only the current instance whereas ALTER SYSTEM ARCHIVE LOG
+ CURRENT makes redo log switch on all nodes (threads).
+
+Let's see all statuses of groups before switching.
+
+SQL> select thread#, instance_name from v$instance;
+ THREAD# INSTANCE_NAME
+---------- ----------------
+ 1 TESTCDB1
+
+SQL> select thread#, group#, status from v$log order by 1,2;
+ THREAD#   GROUP# STATUS
+---------- ---------- ----------------
+ 1     1 INACTIVE
+ 1     3 INACTIVE
+ 1     5 CURRENT
+ 2     2 CURRENT
+ 2     4 INACTIVE
+ 2     6 INACTIVE
+6 rows selected.
+
+ALTER SYSTEM SWITCH LOGFILE
+First of all, we make a switch log file.
+
+SQL> alter system switch logfile;
+System altered.
+
+SQL> select thread#, group#, status from v$log order by 1,2;
+ THREAD#   GROUP# STATUS
+---------- ---------- ----------------
+ 1     1 CURRENT
+ 1     3 INACTIVE
+ 1     5 ACTIVE
+ 2     2 CURRENT
+ 2     4 INACTIVE
+ 2     6 INACTIVE
+6 rows selected.
+
+ALTER SYSTEM ARCHIVE LOG CURRENT
+By default, it switches redo groups on all nodes (threads).
+
+SQL> alter system archive log current;
+System altered.
+
+SQL> select thread#, group#, status from v$log order by 1,2;
+ THREAD#   GROUP# STATUS
+---------- ---------- ----------------
+ 1     1 ACTIVE
+ 1     3 CURRENT
+ 1     5 INACTIVE
+ 2     2 ACTIVE
+ 2     4 CURRENT
+ 2     6 INACTIVE
+
+6 rows selected.

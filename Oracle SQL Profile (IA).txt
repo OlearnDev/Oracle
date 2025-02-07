@@ -1,0 +1,111 @@
+An *Oracle SQL Profile* is a database object that contains auxiliary information about a SQL statement, which helps the Oracle 
+optimizer generate a more efficient execution plan. It is part of Oracle's *SQL Tuning* features and is created using the 
+*SQL Tuning Advisor* or *Automatic SQL Tuning*.
+
+SQL Profiles are particularly useful when the optimizer cannot generate an optimal execution plan due to missing or incomplete 
+statistics, complex queries, or other factors. They provide additional information to the optimizer, such as:
+
+- *Cardinality estimates*: More accurate row count estimates for intermediate results.
+- *Selectivity estimates*: Better estimates of how selective predicates are.
+- *Cost adjustments*: Adjustments to the cost calculations used by the optimizer.
+
+Unlike *SQL Plan Baselines*, which lock in a specific execution plan, SQL Profiles provide hints to the optimizer without 
+forcing a particular plan. This allows the optimizer to adapt to changes in data distribution or database configuration.
+
+---
+
+### *Key Features of SQL Profiles*
+1. *Optimizer Guidance*: SQL Profiles provide additional information to the optimizer, helping it make better decisions.
+2. *Adaptability*: They do not lock the optimizer into a specific plan, allowing flexibility as data or system conditions change.
+3. *Automatic Creation: SQL Profiles can be created automatically by the **Automatic SQL Tuning Advisor* during maintenance windows.
+4. *Manual Creation: They can also be created manually using the **SQL Tuning Advisor*.
+
+---
+
+### *How SQL Profiles Work*
+1. *Identify Problematic SQL*: A SQL statement with poor performance is identified (e.g., through AWR reports, SQL Monitoring, 
+   or manual analysis).
+2. *Run SQL Tuning Advisor*: The SQL Tuning Advisor analyzes the SQL statement and recommends a SQL Profile if it finds a better
+    execution plan.
+3. *Create SQL Profile*: If accepted, the SQL Profile is created and stored in the database.
+4. *Optimizer Uses SQL Profile*: For subsequent executions of the SQL statement, the optimizer uses the information in the SQL 
+   Profile to generate a better execution plan.
+
+---
+
+### *Creating a SQL Profile*
+#### *1. Using SQL Tuning Advisor*
+- Identify the SQL ID of the problematic query:
+  sql
+  SELECT sql_id, sql_text FROM v$sql WHERE sql_text LIKE '%your_query%';
+  
+- Run the SQL Tuning Advisor:
+  sql
+  DECLARE
+    l_task_name VARCHAR2(30);
+  BEGIN
+    l_task_name := DBMS_SQLTUNE.CREATE_TUNING_TASK(
+      sql_id      => 'your_sql_id',
+      scope       => DBMS_SQLTUNE.SCOPE_COMPREHENSIVE,
+      time_limit  => 60,
+      task_name   => 'tune_sql_task',
+      description => 'Tune SQL statement'
+    );
+    DBMS_SQLTUNE.EXECUTE_TUNING_TASK(task_name => 'tune_sql_task');
+  END;
+  /
+  
+- Check the recommendations:
+  sql
+  SELECT DBMS_SQLTUNE.REPORT_TUNING_TASK('tune_sql_task') FROM dual;
+  
+- Accept the SQL Profile if recommended:
+  sql
+  EXEC DBMS_SQLTUNE.ACCEPT_SQL_PROFILE(task_name => 'tune_sql_task', task_owner => 'SYS', replace => TRUE);
+  
+
+#### *2. Using Automatic SQL Tuning*
+- Automatic SQL Tuning runs during maintenance windows and identifies high-load SQL statements.
+- It automatically creates and tests SQL Profiles for these statements.
+- You can view and manage automatic SQL Profiles using the DBA_ADVISOR_EXECUTIONS and DBA_SQL_PROFILES views.
+
+---
+
+### *Managing SQL Profiles*
+- *View SQL Profiles*:
+  sql
+  SELECT name, category, status, sql_text FROM dba_sql_profiles;
+  
+- *Enable/Disable a SQL Profile*:
+  sql
+  EXEC DBMS_SQLTUNE.ALTER_SQL_PROFILE(name => 'your_profile_name', attribute_name => 'STATUS', value => 'DISABLED');
+  
+- *Drop a SQL Profile*:
+  sql
+  EXEC DBMS_SQLTUNE.DROP_SQL_PROFILE(name => 'your_profile_name');
+  
+
+---
+
+### *Benefits of SQL Profiles*
+1. *Improved Performance*: Helps the optimizer generate better execution plans, leading to faster query execution.
+2. *No Code Changes*: Requires no changes to the SQL statement or application code.
+3. *Adaptability*: Allows the optimizer to adapt to changes in data or system conditions.
+4. *Low Maintenance*: Once created, SQL Profiles require minimal maintenance.
+
+---
+
+### *Limitations of SQL Profiles*
+1. *Not a Silver Bullet*: SQL Profiles may not always resolve performance issues, especially if the underlying problem is related
+ to schema design or indexing.
+2. *Dependency on Statistics*: SQL Profiles rely on accurate statistics. If statistics are outdated, the profile may not be 
+  effective.
+3. *Storage Overhead*: SQL Profiles consume storage in the database.
+
+---
+
+### *Conclusion*
+Oracle SQL Profiles are a powerful tool for improving SQL performance by providing the optimizer with additional information to 
+generate better execution plans. They are created and managed using the SQL Tuning Advisor or Automatic SQL Tuning and can 
+significantly enhance query performance without requiring changes to the SQL statement or application code. However, they should
+ be used in conjunction with other performance tuning techniques for optimal

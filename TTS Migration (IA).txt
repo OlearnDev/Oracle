@@ -1,0 +1,117 @@
+La migration d'une base de données Oracle à l'aide de *Transportable Tablespaces (TTS)* entre des plateformes avec d
+es *endianness différents* (par exemple, passer de Little Endian à Big Endian ou vice versa) nécessite des étapes spécifiques 
+pour garantir la compatibilité des données. Voici une procédure détaillée pour réaliser cette migration :
+
+---
+
+### *Prérequis*
+1. *Vérifier l'endianness* :
+   - Utilisez la vue V$TRANSPORTABLE_PLATFORM pour vérifier l'endianness des plateformes source et cible.
+   sql
+   SELECT PLATFORM_NAME, ENDIAN_FORMAT
+   FROM V$TRANSPORTABLE_PLATFORM;
+   
+   - Assurez-vous que les plateformes source et cible ont des endianness différents.
+
+2. *Compatibilité des versions* :
+   - La version de la base de données source doit être compatible avec la version de la base de données cible.
+   - Vérifiez la compatibilité des versions dans la documentation Oracle.
+
+3. *Espace disque* :
+   - Assurez-vous d'avoir suffisamment d'espace disque pour exporter les tablespaces et convertir les fichiers de données.
+
+4. *Privilèges* :
+   - Vous devez disposer des privilèges nécessaires pour exécuter les opérations de TTS, tels que SYSDBA ou SYSBACKUP.
+
+---
+
+### *Procédure de migration*
+
+#### *Étape 1 : Préparer les tablespaces sur la source*
+1. *Vérifier les tablespaces* :
+   - Identifiez les tablespaces à migrer.
+   - Assurez-vous qu ils sont en mode lecture seule.
+   
+	SQL> ALTER TABLESPACE tablespace_name READ ONLY;
+   
+
+2. *Exporter les métadonnées* :
+   - Utilisez l''outil expdp (Data Pump) pour exporter les métadonnées des tablespaces.
+   
+   $expdp user/password@source_db DIRECTORY=dpump_dir DUMPFILE=metadata.dmp TRANSPORT_TABLESPACES=tablespace_name 
+    TRANSPORT_FULL_CHECK=Y LOGFILE=export.log
+   
+
+3. *Copier les fichiers de données* :
+   - Copiez les fichiers de données des tablespaces (fichiers .dbf) vers la plateforme cible.
+
+---
+
+#### *Étape 2 : Convertir les fichiers de données*
+1. *Utiliser RMAN pour la conversion* :
+   - Sur la plateforme cible, utilisez RMAN pour convertir les fichiers de données en fonction de l''endianness de la 
+     plateforme cible.
+   
+   rman TARGET /
+   CONVERT DATAFILE 'chemin_vers_fichier_source.dbf'
+   TO PLATFORM 'nom_plateforme_cible'
+   FORMAT 'chemin_vers_fichier_converti.dbf';
+   
+
+2. *Vérifier la conversion* :
+   - Assurez-vous que les fichiers convertis sont correctement générés et accessibles.
+
+---
+
+#### *Étape 3 : Importer les tablespaces sur la cible*
+1. *Copier les fichiers convertis* :
+   - Placez les fichiers de données convertis dans l'emplacement approprié sur la plateforme cible.
+
+2. *Importer les métadonnées* :
+   - Utilisez l'outil impdp (Data Pump) pour importer les métadonnées des tablespaces.
+   bash
+   impdp user/password@target_db DIRECTORY=dpump_dir DUMPFILE=metadata.dmp TRANSPORT_DATAFILES='chemin_vers_fichier_converti.dbf'
+   LOGFILE=import.log
+   
+
+3. *Vérifier l'importation* :
+   - Vérifiez que les tablespaces sont correctement importés et accessibles.
+
+---
+
+#### *Étape 4 : Finaliser la migration*
+1. *Mettre les tablespaces en mode lecture/écriture* :
+   - Une fois la migration terminée, mettez les tablespaces en mode lecture/écriture.
+   sql
+   ALTER TABLESPACE tablespace_name READ WRITE;
+   
+
+2. *Vérifier l'intégrité des données* :
+   - Exécutez des requêtes pour vérifier que les données sont intactes et accessibles.
+
+3. *Nettoyer les fichiers temporaires* :
+   - Supprimez les fichiers temporaires (fichiers de données source, fichiers de métadonnées, etc.) pour libérer de l'espace.
+
+---
+
+### *Exemple de commandes RMAN pour la conversion*
+Si vous migrez d'une plateforme Little Endian (par exemple, Linux x86) vers une plateforme Big Endian (par exemple, Solaris), 
+voici un exemple de commande RMAN :
+bash
+rman TARGET /
+CONVERT DATAFILE '/u01/app/oracle/oradata/source/tablespace1.dbf'
+TO PLATFORM 'Solaris[tm] OE (64-bit)'
+FORMAT '/u02/app/oracle/oradata/target/tablespace1_converti.dbf';
+
+
+---
+
+### *Points à surveiller*
+- *Compatibilité des caractères* : Assurez-vous que les jeux de caractères (NLS) sont compatibles entre la source et la cible.
+- *Taille des fichiers* : La conversion peut augmenter la taille des fichiers de données.
+- *Performances* : La conversion peut prendre du temps en fonction de la taille des tablespaces.
+
+---
+
+En suivant cette procédure, vous pouvez migrer une base de données Oracle entre des plateformes avec des endianness différents 
+en utilisant Transportable Tablespaces.

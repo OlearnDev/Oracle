@@ -1,0 +1,23 @@
+1.Parsing:
+
+	Checks for valid SQL syntax.
+	Breaks the query into its components (SELECT, FROM, WHERE clauses).
+	Builds a parse tree representing the query structure.
+
+2.Binding:
+
+	Assigns actual values to any placeholder variables (bind variables) in the query.
+	May perform data type conversions if necessary.
+	Creates a query tree with concrete data values.
+
+3.Optimization (by the Optimizer):
+
+	Analyzes the query tree and available statistics about the data.
+	Evaluates different execution plans (like using indexes, join methods) based on cost estimation.
+	Selects the most efficient execution plan to retrieve the data.
+
+4.Execution:
+
+	Executes the chosen execution plan against the database tables.
+	Retrieves data based on the selected access paths and operations.
+	Returns the final result set to the application.

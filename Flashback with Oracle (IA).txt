@@ -1,0 +1,121 @@
+Flashback** est une fonctionnalité puissante d''Oracle Database qui permet de revenir en arrière dans le temps pour récupérer 
+des données ou des états de la base de données qui ont été modifiés ou supprimés. Cette fonctionnalité est particulièrement 
+utile pour :
+
+- *Récupérer des données accidentellement supprimées ou modifiées*.
+- *Analyser des changements historiques* dans les données.
+- *Annuler des opérations* qui ont eu un impact indésirable sur la base de données.
+
+Flashback utilise des mécanismes internes tels que les *undo logs* (journaux d''annulation) et les *flashback logs* (journaux 
+de retour en arrière) pour permettre ces opérations de récupération.
+
+---
+
+### *Types de Flashback dans Oracle*
+
+Oracle propose plusieurs types de fonctionnalités Flashback, chacune adaptée à des cas d''utilisation spécifiques :
+
+1. *Flashback Query* :
+   - Permet d'interroger les données telles qu'elles existaient à un moment précis dans le passé.
+   - Utilise les *undo logs* pour reconstruire les données historiques.
+   - Exemple :
+     sql
+     SELECT * FROM employees AS OF TIMESTAMP TO_TIMESTAMP('2023-10-01 12:00:00', 'YYYY-MM-DD HH24:MI:SS')
+     WHERE employee_id = 100;
+     
+
+2. *Flashback Version Query* :
+   - Permet de voir toutes les versions d''une ligne entre deux points dans le temps.
+   - Utile pour suivre les modifications apportées à une ligne spécifique.
+   - Exemple :
+     sql
+     SELECT * FROM employees VERSIONS BETWEEN TIMESTAMP
+     TO_TIMESTAMP('2023-10-01 12:00:00', 'YYYY-MM-DD HH24:MI:SS') AND
+     TO_TIMESTAMP('2023-10-02 12:00:00', 'YYYY-MM-DD HH24:MI:SS')
+     WHERE employee_id = 100;
+     
+
+3. *Flashback Transaction Query* :
+   - Permet de voir les transactions qui ont modifié une ligne spécifique.
+   - Utile pour identifier qui a fait une modification et quand.
+   - Exemple :
+     sql
+     SELECT xid, operation, start_scn, commit_scn, logon_user
+     FROM flashback_transaction_query
+     WHERE table_name = 'EMPLOYEES' AND table_owner = 'HR';
+     
+
+4. *Flashback Table* :
+   - Permet de restaurer une table à un état antérieur sans affecter les autres objets de la base de données.
+   - Nécessite que la fonctionnalité *ROW MOVEMENT* soit activée sur la table.
+   - Exemple :
+     sql
+     ALTER TABLE employees ENABLE ROW MOVEMENT;
+     FLASHBACK TABLE employees TO TIMESTAMP TO_TIMESTAMP('2023-10-01 12:00:00', 'YYYY-MM-DD HH24:MI:SS');
+     
+
+5. *Flashback Drop* :
+   - Permet de récupérer une table qui a été supprimée par erreur.
+   - Utilise la *corbeille* (recycle bin) pour restaurer la table.
+   - Exemple :
+     sql
+     FLASHBACK TABLE employees TO BEFORE DROP;
+     
+
+6. *Flashback Database* :
+   - Permet de ramener l''ensemble de la base de données à un état antérieur.
+   - Nécessite l'activation des *flashback logs* et la configuration d'un *flashback recovery area*.
+   - Exemple :
+     sql
+     SHUTDOWN IMMEDIATE;
+     STARTUP MOUNT;
+     FLASHBACK DATABASE TO TIMESTAMP TO_TIMESTAMP('2023-10-01 12:00:00', 'YYYY-MM-DD HH24:MI:SS');
+     ALTER DATABASE OPEN RESETLOGS;
+     
+
+7. *Flashback Data Archive (FDA)* :
+   - Permet de conserver un historique des changements de données sur une longue période.
+   - Utile pour des besoins d''audit ou de conformité réglementaire.
+   - Exemple :
+     sql
+     CREATE FLASHBACK ARCHIVE default_archive
+     TABLESPACE users
+     RETENTION 1 YEAR;
+     
+
+---
+
+### *Avantages de Flashback*
+- *Récupération rapide* : Permet de restaurer des données ou des objets sans avoir à restaurer une sauvegarde complète.
+- *Minimise les temps d'arrêt* : Les opérations Flashback sont généralement plus rapides que les restaurations traditionnelles.
+- *Facilité d'utilisation* : Les commandes Flashback sont simples et intégrées directement dans SQL.
+- *Analyse historique* : Permet de suivre les modifications des données pour des besoins d''audit ou de débogage.
+
+---
+
+### *Limitations de Flashback*
+- *Dépendance des undo logs* : Certaines fonctionnalités Flashback dépendent des undo logs, qui ont une durée de rétention limitée.
+- *Espace de stockage* : Les flashback logs et les undo logs consomment de l''espace disque.
+- *Configuration requise* : Certaines fonctionnalités, comme Flashback Database, nécessitent une configuration spécifique.
+
+---
+
+### *Configuration de Flashback*
+Pour utiliser Flashback Database, vous devez :
+1. Activer les flashback logs :
+   sql
+   ALTER DATABASE FLASHBACK ON;
+   
+2. Configurer une *flashback recovery area* :
+   sql
+   ALTER SYSTEM SET DB_RECOVERY_FILE_DEST_SIZE = 10G;
+   ALTER SYSTEM SET DB_RECOVERY_FILE_DEST = '/u01/app/oracle/flashback_area';
+   
+
+---
+
+### *Conclusion*
+Flashback est une fonctionnalité essentielle d'Oracle pour la récupération de données, l'analyse historique et la gestion des erreurs. 
+Elle offre une flexibilité et une efficacité accrues par rapport aux méthodes de restauration traditionnelles. Cependant, 
+son utilisation nécessite une particompréhension des mécanismes sous-jacents et une configuration appropriée pour en tirer le 
+meilleur 

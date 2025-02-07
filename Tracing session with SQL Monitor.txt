@@ -1,0 +1,8 @@
+1)Tracing session with SQL Monitor 
+
+	https://blogs.oracle.com/connect/post/beginning-performance-tuning-trace-your-steps
+
+
+2) Why Oracle Changes the Execution Plan for a Query?
+
+	https://dbplus.tech/en/2024/05/16/why-oracle-changes-the-execution-plan-for-a-query/

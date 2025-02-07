@@ -1,0 +1,62 @@
+Oracle SQL Plan Management (SPM) is a feature in Oracle Database that helps maintain consistent SQL execution plans over time, 
+even as the database environment changes. It aims to prevent performance regressions caused by plan changes due to factors like 
+database upgrades, optimizer updates, or changes in statistics.
+
+### Key Components of SQL Plan Management:
+
+1. *SQL Plan Baselines*:
+   - A SQL Plan Baseline is a set of accepted execution plans for a SQL statement.
+   - It ensures that only known and verified plans are used, preventing unexpected plan changes.
+
+2. *Plan Capture*:
+   - Plans can be captured automatically or manually.
+   - Automatic capture occurs when the OPTIMIZER_CAPTURE_SQL_PLAN_BASELINES parameter is enabled, and the database captures plans
+    for repeatable SQL statements.
+   - Manual capture involves loading plans from the AWR (Automatic Workload Repository), SQL Tuning Sets, or directly from the 
+    cursor cache.
+
+3. *Plan Selection*:
+   - When a SQL statement is executed, the optimizer evaluates the available plans in the SQL Plan Baseline.
+   - If a new plan is found, it is added to the baseline but not used until it is verified and accepted.
+
+4. *Plan Evolution*:
+   - Plan evolution is the process of testing and accepting new plans into the SQL Plan Baseline.
+   - This can be done manually or automatically using the DBMS_SPM.EVOLVE_SQL_PLAN_BASELINE procedure.
+   - Plans are tested for performance, and if they improve performance, they are accepted.
+
+5. *Plan Stability*:
+   - Once a plan is accepted, it remains stable and is used for future executions of the SQL statement.
+   - This ensures consistent performance even if the database environment changes.
+
+### Benefits of SQL Plan Management:
+
+- *Performance Stability*: Prevents unexpected performance regressions by ensuring only verified plans are used.
+- *Controlled Plan Changes*: Allows controlled introduction of new plans after thorough testing.
+- *Adaptability*: Can adapt to changes in the database environment while maintaining performance.
+
+### Example Workflow:
+
+1. *Capture*: A SQL statement is executed, and its plan is captured in the SQL Plan Baseline.
+2. *Execution*: The next time the SQL statement is executed, the optimizer uses the plan from the baseline.
+3. *Change Detection*: If a new plan is generated (e.g., due to a database upgrade), it is added to the baseline but not used.
+4. *Evolution*: The new plan is tested for performance. If it performs better, it is accepted and used for future executions.
+
+### Enabling SQL Plan Management:
+
+- Automatic capture can be enabled by setting the parameter:
+  sql
+  ALTER SYSTEM SET OPTIMIZER_CAPTURE_SQL_PLAN_BASELINES = TRUE;
+  
+- Manual capture can be done using the DBMS_SPM package:
+  sql
+  DECLARE
+    l_plans_loaded PLS_INTEGER;
+  BEGIN
+    l_plans_loaded := DBMS_SPM.LOAD_PLANS_FROM_CURSOR_CACHE(sql_id => 'your_sql_id');
+  END;
+  
+
+### Conclusion:
+
+Oracle SQL Plan Management is a powerful tool for maintaining SQL performance stability. By managing execution plans, it ensures 
+that SQL statements continue to perform we

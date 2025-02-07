@@ -10,7 +10,7 @@ database upgrades, optimizer updates, or changes in statistics.
 
 2. *Plan Capture*:
    - Plans can be captured automatically or manually.
-   - Automatic capture occurs when the OPTIMIZER_CAPTURE_SQL_PLAN_BASELINES parameter is enabled, and the database captures plans
+   - Automatic capture occurs when the OPTIMIZER_CAPTURE_SQL_PLAN_BASELINES parameter is enabled and the database captures plans
     for repeatable SQL statements.
    - Manual capture involves loading plans from the AWR (Automatic Workload Repository), SQL Tuning Sets, or directly from the 
     cursor cache.
@@ -60,3 +60,85 @@ database upgrades, optimizer updates, or changes in statistics.
 
 Oracle SQL Plan Management is a powerful tool for maintaining SQL performance stability. By managing execution plans, it ensures 
 that SQL statements continue to perform we
+
+--------------- Load a SQL execution plan from the Automatic Workload Repository (AWR)  ---------------
+
+To load a SQL execution plan from the Automatic Workload Repository (AWR) into the SQL Plan Management (SPM) baseline in Oracle,
+you can follow these steps:
+
+### 1. Identify the SQL ID and Plan Hash Value
+First, you need to identify the SQL ID and the plan hash value (PHV) of the execution plan you want to load from AWR.
+
+sql
+SELECT sql_id, plan_hash_value, executions, elapsed_time, cpu_time
+FROM dba_hist_sqlstat
+WHERE sql_id = 'your_sql_id';
+
+
+### 2. Load the Plan from AWR into the SPM Baseline
+Use the DBMS_SPM.LOAD_PLANS_FROM_AWR procedure to load the plan into the SQL Plan Baseline.
+
+sql
+DECLARE
+    l_plans_loaded  PLS_INTEGER;
+BEGIN
+    l_plans_loaded := DBMS_SPM.LOAD_PLANS_FROM_AWR(
+        begin_snap  => &begin_snap_id,
+        end_snap    => &end_snap_id,
+        sql_id      => 'your_sql_id',
+        plan_hash_value => &plan_hash_value,
+        fixed       => 'NO',
+        enabled     => 'YES'
+    );
+    
+    DBMS_OUTPUT.PUT_LINE('Plans loaded: ' || l_plans_loaded);
+END;
+/
+
+
+### Parameters:
+- begin_snap: The beginning snapshot ID.
+- end_snap: The ending snapshot ID.
+- sql_id: The SQL ID of the query.
+- plan_hash_value: The plan hash value of the execution plan you want to load.
+- fixed: If set to 'YES', the plan will be marked as fixed in the baseline.
+- enabled: If set to 'YES', the plan will be enabled in the baseline.
+
+### 3. Verify the Loaded Plan
+After loading the plan, you can verify that it has been added to the SQL Plan Baseline by querying the DBA_SQL_PLAN_BASELINES 
+view.
+
+sql
+SELECT sql_handle, plan_name, enabled, accepted, fixed
+FROM dba_sql_plan_baselines
+WHERE sql_text LIKE '%your_sql_text%';
+
+
+### Example:
+Suppose you have a SQL ID 1234567890abcdef and a plan hash value 987654321. You want to load the plan from snapshot IDs 1000 
+to 2000.
+
+sql
+DECLARE
+    l_plans_loaded  PLS_INTEGER;
+BEGIN
+    l_plans_loaded := DBMS_SPM.LOAD_PLANS_FROM_AWR(
+        begin_snap  => 1000,
+        end_snap    => 2000,
+        sql_id      => '1234567890abcdef',
+        plan_hash_value => 987654321,
+        fixed       => 'NO',
+        enabled     => 'YES'
+    );
+    
+    DBMS_OUTPUT.PUT_LINE('Plans loaded: ' || l_plans_loaded);
+END;
+/
+
+
+### Notes:
+- Ensure that you have the necessary privileges to access AWR and use the DBMS_SPM package.
+- The DBMS_SPM.LOAD_PLANS_FROM_AWR procedure can load multiple plans if they exist within the specified snapshot range.
+
+By following these steps, you can load a specific execution plan from AWR into the SQL Plan Baseline, allowing Oracle to use 
+this plan for future executions of the SQL statement.

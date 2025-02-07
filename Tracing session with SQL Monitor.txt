@@ -6,3 +6,483 @@
 2) Why Oracle Changes the Execution Plan for a Query?
 
 	https://dbplus.tech/en/2024/05/16/why-oracle-changes-the-execution-plan-for-a-query/
+	
+	
+
+How to trace SQL sessions to identify Oracle Database bottlenecks
+
+Want your database to run faster? While common tuning techniques can prove quite helpful in resolving many performance issues, 
+they don’t show the details of all the activities of a session. For example, by using those techniques, you can see what events 
+the session has been waiting for, how much time a session has spent on each event, and what resources (CPU cycles, memory, and 
+so on) an event consumed. Those tuning techniques do not, however, show the timing of individual queries or the different 
+execution steps in each query. To display those details, you need to trace the session.
+
+Tracing is the action of enabling a flag in Oracle Database that instructs the database to write the details of the activities 
+inside a session to a text file on the server. In this article, you will learn how to enable tracing in remote and future 
+sessions and analyze trace files to resolve performance issues. There are many ways you can enable tracing in sessions, but the 
+easiest is to use the Oracle-provided DBMS_MONITOR package.
+
+Tracing basics
+Consider the following problem scenario: Your database application performance has been erratic; it has been acting as expected 
+at times and badly at other times. How can you identify the root cause and resolve the issue? The answer: Trace and analyze the 
+session. To demonstrate the concepts and the solution, I will use the SH schema, available with the sample schemas of Oracle 
+Database.
+
+To see tracing concepts and this article’s problem and solution in action, first connect to the database as the SH user and run 
+the query shown in Listing 1.
+
+Code listing 1: Example activity script
+
+Copy code snippet
+Copied to ClipboardError: Could not CopyCopied to ClipboardError: Could not Copy
+-- Example activity script to demonstrate tracing
+-- Connect as SH user and execute the script
+-- SH schema (part of example schemas) must have been installed.
+alter session set query_rewrite_integrity = stale_tolerated
+/
+alter session set query_rewrite_enabled = true
+/
+SELECT     sum(s.amount_sold) AS dollars
+  FROM     sales s
+  ,        times t
+  WHERE    s.time_id = t.time_id
+  AND      t.calendar_month_desc = '1998-05'
+/
+alter session set query_rewrite_enabled = false
+/
+alter session set query_rewrite_integrity = enforced
+/
+SELECT     sum(s.amount_sold) AS dollars
+  FROM     sales s
+  ,        times t
+  WHERE    s.time_id = t.time_id
+  AND      t.calendar_month_desc = '1998-05'
+/
+Exit
+-- Example activity script to demonstrate tracing
+-- Connect as SH user and execute the script
+-- SH schema (part of example schemas) must have been installed.
+alter session set query_rewrite_integrity = stale_tolerated
+/
+alter session set query_rewrite_enabled = true
+/
+SELECT     sum(s.amount_sold) AS dollars
+  FROM     sales s
+  ,        times t
+  WHERE    s.time_id = t.time_id
+  AND      t.calendar_month_desc = '1998-05'
+/
+alter session set query_rewrite_enabled = false
+/
+alter session set query_rewrite_integrity = enforced
+/
+SELECT     sum(s.amount_sold) AS dollars
+  FROM     sales s
+  ,        times t
+  WHERE    s.time_id = t.time_id
+  AND      t.calendar_month_desc = '1998-05'
+/
+Exit
+To start the session trace, you first need to know the unique identifiers of the session: the SID and the SERIAL#. Use the 
+following query to find these identifiers in the v$session view:
+
+Copy code snippet
+Copied to ClipboardError: Could not CopyCopied to ClipboardError: Could not Copy
+select sid, serial#
+from v$session
+where username = 'SH';
+select sid, serial#
+from v$session
+where username = 'SH';
+Using the SID and SERIAL# returned, turn on tracing for the session by executing the following SQL statement as the SYS user:
+
+Copy code snippet
+Copied to ClipboardError: Could not CopyCopied to ClipboardError: Could not Copy
+begin
+  dbms_monitor.session_trace_enable (
+    session_id => <SID>, 
+    serial_num => <serial#>, 
+    waits      => true, 
+    binds      => true
+    plan_stat  => 'all_executions');
+end;
+begin
+  dbms_monitor.session_trace_enable (
+    session_id => <SID>, 
+    serial_num => <serial#>, 
+    waits      => true, 
+    binds      => true
+    plan_stat  => 'all_executions');
+end;
+After tracing is enabled, the trace file— a text file—is generated on the database server at the location specified by the 
+DIAGNOSTIC_DEST database initialization parameter. Listing 2 shows a script—named tfname.sql—that accepts the SID of the session 
+as a parameter and shows the complete path of the trace file as the output.
+
+Code listing 2: Script to identify the trace file
+
+Copy code snippet
+Copied to ClipboardError: Could not CopyCopied to ClipboardError: Could not Copy
+select
+   r.value                                ||'\diag\rdbms\'||
+   sys_context('USERENV','DB_NAME')       ||'\'||
+   sys_context('USERENV','INSTANCE_NAME') ||'\trace\'||
+   sys_context('USERENV','DB_NAME')       ||'_ora_'||p.spid||'.trc'
+   as tracefile_name
+from v$session s, v$parameter r, v$process p
+where r.name = 'diagnostic_dest'
+and s.sid = &1
+and p.addr = s.paddr;
+select
+   r.value                                ||'\diag\rdbms\'||
+   sys_context('USERENV','DB_NAME')       ||'\'||
+   sys_context('USERENV','INSTANCE_NAME') ||'\trace\'||
+   sys_context('USERENV','DB_NAME')       ||'_ora_'||p.spid||'.trc'
+   as tracefile_name
+from v$session s, v$parameter r, v$process p
+where r.name = 'diagnostic_dest'					'
+and s.sid = &1
+and p.addr = s.paddr;
+For example, to find the trace file of a session with SID 246, you would execute
+
+Copy code snippet
+Copied to ClipboardError: Could not CopyCopied to ClipboardError: Could not Copy
+SQL> @tfname 246
+TRACEFILE_NAME
+———————————————————————————————————
+C:\APP\ORACLE\diag\rdbms\ANN1\ann1\
+trace\ann1_ora_11408.trc
+SQL> @tfname 246
+TRACEFILE_NAME
+———————————————————————————————————
+C:\APP\ORACLE\diag\rdbms\ANN1\ann1\
+trace\ann1_ora_11408.trc
+For UNIX-based systems, replace backslashes (\) with forward slashes (/) in the tfname.sql script. In this case, the trace 
+file—named ann1_ora_11408.trc—is generated in the C:\APP\ORACLE\diag\rdbms\ANN1\ann1\trace folder. I am not showing the entire 
+trace file here, but you can download it for reference.
+
+Analysis
+Examining a raw trace file can be overwhelming. To glean useful information from it quickly, convert it to a format you can 
+easily interpret.
+
+Oracle Database provides a tool called tkprof for this very purpose. It accepts a raw trace file and produces a file with the 
+trace file data in a readable format. Here is how you would use tkprof on a raw trace file named ann1_ora_11408.trc:
+
+Copy code snippet
+Copied to ClipboardError: Could not CopyCopied to ClipboardError: Could not Copy
+tkprof ann1_ora_11408.trc 
+ann1_ora_11408.out sys=no waits=yes 
+aggregate=no width=180
+tkprof ann1_ora_11408.trc 
+ann1_ora_11408.out sys=no waits=yes 
+aggregate=no width=180
+It produces a well-formatted file named ann1_ora_11408.out, which you can download for reference.
+
+Listing 3 is a small excerpt of the ann1_ora_11408.out file. The output file shows many things: various queries executed by the 
+session, the execution statistics of the queries, and more.
+
+Code listing 3: tkprof output, part 1
+
+Copy code snippet
+Copied to ClipboardError: Could not CopyCopied to ClipboardError: Could not Copy
+... output truncated ...
+SELECT     sum(s.amount_sold) AS dollars
+  FROM     sales s
+  ,        times t
+  WHERE    s.time_id = t.time_id
+  AND      t.calendar_month_desc = '1998-05'
+call     count      cpu    elapsed      disk      query    current        rows
+————— ———————— ———————— —————————— ————————— —————————— —————————— ———————————
+Parse        1     0.00       0.00         0          0          0           0
+Execute      1     0.00       0.00         0          0          0           0
+Fetch        2     0.00       0.01         0          3          0           1
+————— ———————— ———————— —————————— ————————— —————————— —————————— ———————————
+total        4     0.00       0.01         0          3          0           1
+Rows (1st) Rows (avg) Rows (max) Row Source Operation
+—————————— —————————— —————————— ———————————————————————————————————————————
+         1          1          1 SORT AGGREGATE (cr=3 pr=0 pw=0 time=61 us)
+         1          1          1  MAT_VIEW REWRITE ACCESS FULL CAL_MONTH_
+                                  SALES_MV (cr=3 pr=0 pw=0 time=52 us cost=3 
+                                  size=15 card=1)
+... output truncated …
+... output truncated ...
+SELECT     sum(s.amount_sold) AS dollars
+  FROM     sales s
+  ,        times t
+  WHERE    s.time_id = t.time_id
+  AND      t.calendar_month_desc = '1998-05'
+call     count      cpu    elapsed      disk      query    current        rows
+————— ———————— ———————— —————————— ————————— —————————— —————————— ———————————
+Parse        1     0.00       0.00         0          0          0           0
+Execute      1     0.00       0.00         0          0          0           0
+Fetch        2     0.00       0.01         0          3          0           1
+————— ———————— ———————— —————————— ————————— —————————— —————————— ———————————
+total        4     0.00       0.01         0          3          0           1
+Rows (1st) Rows (avg) Rows (max) Row Source Operation
+—————————— —————————— —————————— ———————————————————————————————————————————
+         1          1          1 SORT AGGREGATE (cr=3 pr=0 pw=0 time=61 us)
+         1          1          1  MAT_VIEW REWRITE ACCESS FULL CAL_MONTH_
+                                  SALES_MV (cr=3 pr=0 pw=0 time=52 us cost=3 
+                                  size=15 card=1)
+... output truncated …
+The statistics in Listing 3 just after the SQL show the different types of activities called by the query (under CALL): PARSE, 
+EXECUTE, and FETCH. The rest of the output shows execution statistics for the different activities in a table format. 
+Here are some important table columns in the tkprof output of the trace file and their meanings:
+
+COUNT. The number of times that type of call has been made.
+ELAPSED. The total time of the call, including CPU time. (This is the directly observable metric. The greater the elapsed time, 
+the more time the session is taking.)
+CPU. The total CPU time of the call.
+QUERY. How many blocks were accessed (queried) by the call (whether from disk or buffer cache).
+DISK. How many of those queried blocks came from the disk.
+The query execution statistics are the first thing you should examine during performance troubleshooting. Look at the number of 
+calls for each type of operation in Listing 3. For example, parsing requires CPU cycles, so the greater the CPU number for PARSE,
+the greater the CPU consumption. Next, look at the total time under ELAPSED. Obviously, your tuning objective is to reduce the 
+elapsed time of the query to reduce the overall time used by the session. But how?
+
+To answer that, notice the number for TOTAL under CPU in Listing 3, which shows the total CPU time. My “Beginning performance 
+tuning” article demonstrated that an Oracle Database session is in one of two states: doing something useful (on CPU) or waiting 
+for something such as a latch or a lock. That same article demonstrated how to measure exactly how much time a session used and 
+how much of it was spent on CPU, but that demonstration didn’t break down the elapsed times for individual SQL statements in a 
+session. Now, with the tkprof output from the trace file, you not only know the elapsed time of the individual SQL statements 
+inside the session but also how much of it was spent on CPU.
+
+The DISK column value in Listing 3 shows 0, meaning that the query got all of its blocks from the buffer cache without needing 
+to go to the physical disk. The QUERY column shows the number of rows retrieved at that stage. In this case, three rows were 
+retrieved. Because Oracle Database spends some CPU cycles to get a row, the greater the number of rows accessed by the query, 
+the more CPU cycles consumed and the greater the elapsed time.
+
+Right after the tracing statistics in Listing 3, the output lists the row source information, which shows the steps the query 
+executed as well as the statistics for those steps. In this case, the output shows that the query retrieved only one row. 
+Consider the output:
+
+SORT AGGREGATE (cr=3 pr=0 pw=0
+time=61 us)
+
+The TIME element in the output shows how much time the step took. In this case, the sort step took 61 microseconds.
+
+Tracing captured the finer details of not just the session but also the individual SQL statements executed by the session and 
+even the individual steps inside the query. With this level of detailed information, you can identify the specific activity 
+taking up the bulk of the total time used by the session. Reduce that, and you reduce the elapsed time of the session and 
+improve performance.
+
+Resolution
+Now let’s see how to use the trace file information to solve the original problem. Listing 4 includes another excerpt of the 
+same ann1_ora_11408.out tkprof output file. Examine the outputs in Listing 3 and Listing 4, and notice that this query
+
+Copy code snippet
+Copied to ClipboardError: Could not CopyCopied to ClipboardError: Could not Copy
+SELECT sum(s.amount_sold) AS dollars 
+FROM sales s, times t 
+WHERE s.time_id = t.time_id 
+AND t.calendar_month_desc = '1998-05'
+SELECT sum(s.amount_sold) AS dollars 
+FROM sales s, times t 
+WHERE s.time_id = t.time_id 
+AND t.calendar_month_desc = '1998-05'
+appears once in each listing. This is because the query was executed twice and therefore was captured twice in the raw trace 
+file. The tkprof tool, by default, consolidates the metrics of both executions of a specific SQL statement into a single value. 
+That’s why I included the AGGREGATE=NO parameter when I ran the tkprof tool, which caused each occurrence of the query to be 
+recorded separately in the output file.
+
+Note that although the body of the query is the same in both occurrences, the execution statistics are different. 
+The ELAPSED column value shows 0.01 and 0.05 for the first and second occurrence—in Listing 3 and Listing 4—respectively. 
+This is why the session slowed down: It took 0.05 seconds during the second occurrence instead of 0.01 seconds. 
+I found the specific activity that caused the performance issue, but why did the second occurrence take longer?
+
+Look at the QUERY column value in Listing 3 and Listing 4. It was 3 in the first occurrence of the query in Listing 3, but it was
+ 24,485 in the second occurrence in Listing 4. This means that the first occurrence fetched only 3 rows but the second fetched 
+ 24,485 rows. Based on this information, it’s no surprise that the second occurrence took longer to complete—it had to fetch 
+ significantly more rows. I know that the table is static, so the number of rows fetched should be the same each time. 
+ So, why was the number of rows fetched different?
+
+Code listing 4: tkprof output, part 2
+
+Copy code snippet
+Copied to ClipboardError: Could not CopyCopied to ClipboardError: Could not Copy
+... output truncated ...
+SELECT     sum(s.amount_sold) AS dollars
+  FROM     sales s
+  ,        times t
+  WHERE    s.time_id = t.time_id
+  AND      t.calendar_month_desc = '1998-05'
+
+call          count         cpu        elapsed          disk         query         current             rows
+—————————— ———————— ——————————— —————————————— ————————————— —————————————— —————————————— ————————————————
+Parse             1        0.00           0.00             0              0              0                0
+Execute           1        0.00           0.00             0              0              0                0
+Fetch             2        0.00           0.05             0          24485              0                1
+—————————— ———————— ——————————— —————————————— ————————————— —————————————— —————————————— ————————————————
+total             4        0.00           0.05             0          24485              0                1
+
+Rows (1st)           Rows (avg)     Rows (max) Row Source Operation
+——————————————  —————————————— —————————————— ————————————————————————————————————————————————————————————————————————————
+             1               1              1 SORT AGGREGATE (cr=24485 pr=0 pw=0 time=50655 us)
+         12309           12309          12309  HASH JOIN  (cr=24485 pr=0 pw=0 time=58765 us cost=665 size=536284 card=19153)
+         12309           12309          12309   NESTED LOOPS  (cr=24485 pr=0 pw=0 time=53432 us cost=665 size=536284 card=19153)
+         12309           12309          12309    NESTED LOOPS  (cr=90 pr=0 pw=0 time=5826 us cost=665 size=536284 card=19153)
+            31              31             31     STATISTICS COLLECTOR  (cr=56 pr=0 pw=0 time=283 us)
+            31              31             31      TABLE ACCESS FULL TIMES (cr=56 pr=0 pw=0 time=71 us cost=18 size=480 card=30)
+         12309           12309          12309     PARTITION RANGE ITERATOR PARTITION: KEY KEY (cr=34 pr=0 pw=0 time=4410 us)
+         12309           12309          12309      BITMAP CONVERSION TO ROWIDS (cr=34 pr=0 pw=0 time=2258 us)
+            31              31             31       BITMAP INDEX SINGLE VALUE SALES_TIME_BIX PARTITION: KEY KEY (cr=34 pr=0 pw=0 
+                                                    time=299 us)(object id 92695)
+         12309           12309          12309    TABLE ACCESS BY LOCAL INDEX ROWID SALES PARTITION: 1 1 (cr=24395 pr=0 pw=0 
+                                                 time=37669 us cost=665 size=7548 card=629)
+             0               0              0   PARTITION RANGE JOIN-FILTER PARTITION: :BF0000 :BF0000 (cr=0 pr=0 pw=0 time=0 
+                                                us cost=665 size=7548 card=629)
+             0               0              0    TABLE ACCESS FULL SALES PARTITION: :BF0000 :BF0000 (cr=0 pr=0 pw=0 time=0 
+                                                 us cost=665 size=7548 card=629)
+... output truncated ...
+... output truncated ...
+SELECT     sum(s.amount_sold) AS dollars
+  FROM     sales s
+  ,        times t
+  WHERE    s.time_id = t.time_id
+  AND      t.calendar_month_desc = '1998-05'
+
+call          count         cpu        elapsed          disk         query         current             rows
+—————————— ———————— ——————————— —————————————— ————————————— —————————————— —————————————— ————————————————
+Parse             1        0.00           0.00             0              0              0                0
+Execute           1        0.00           0.00             0              0              0                0
+Fetch             2        0.00           0.05             0          24485              0                1
+—————————— ———————— ——————————— —————————————— ————————————— —————————————— —————————————— ————————————————
+total             4        0.00           0.05             0          24485              0                1
+
+Rows (1st)           Rows (avg)     Rows (max) Row Source Operation
+——————————————  —————————————— —————————————— ————————————————————————————————————————————————————————————————————————————
+             1               1              1 SORT AGGREGATE (cr=24485 pr=0 pw=0 time=50655 us)
+         12309           12309          12309  HASH JOIN  (cr=24485 pr=0 pw=0 time=58765 us cost=665 size=536284 card=19153)
+         12309           12309          12309   NESTED LOOPS  (cr=24485 pr=0 pw=0 time=53432 us cost=665 size=536284 card=19153)
+         12309           12309          12309    NESTED LOOPS  (cr=90 pr=0 pw=0 time=5826 us cost=665 size=536284 card=19153)
+            31              31             31     STATISTICS COLLECTOR  (cr=56 pr=0 pw=0 time=283 us)
+            31              31             31      TABLE ACCESS FULL TIMES (cr=56 pr=0 pw=0 time=71 us cost=18 size=480 card=30)
+         12309           12309          12309     PARTITION RANGE ITERATOR PARTITION: KEY KEY (cr=34 pr=0 pw=0 time=4410 us)
+         12309           12309          12309      BITMAP CONVERSION TO ROWIDS (cr=34 pr=0 pw=0 time=2258 us)
+            31              31             31       BITMAP INDEX SINGLE VALUE SALES_TIME_BIX PARTITION: KEY KEY (cr=34 pr=0 pw=0 
+                                                    time=299 us)(object id 92695)
+         12309           12309          12309    TABLE ACCESS BY LOCAL INDEX ROWID SALES PARTITION: 1 1 (cr=24395 pr=0 pw=0 
+                                                 time=37669 us cost=665 size=7548 card=629)
+             0               0              0   PARTITION RANGE JOIN-FILTER PARTITION: :BF0000 :BF0000 (cr=0 pr=0 pw=0 time=0 
+                                                us cost=665 size=7548 card=629)
+             0               0              0    TABLE ACCESS FULL SALES PARTITION: :BF0000 :BF0000 (cr=0 pr=0 pw=0 time=0 
+                                                 us cost=665 size=7548 card=629)
+... output truncated ...
+The answer lies in the row source operation data. In the first occurrence of the query, in Listing 3, ROW SOURCE OPERATION shows
+
+MAT_VIEW REWRITE ACCESS FULL
+CAL_MONTH_SALES_MV
+
+which means that the query selected from a materialized view named CAL_MONTH_MV—not from the database tables. Because 
+materialized views contain summarized data, the query had to pull only a few relevant records from the summary—not all the rows 
+from the tables. In the second occurrence of the query, in Listing 4, ROW SOURCE OPERATION shows that the query selected all the 
+rows from tables, including SALES and TIMES, and from indexes—not from the materialized view. This is the reason for the much 
+higher number of rows fetched in the second query occurrence in Listing 4.
+
+You can also see from the output in Listing 4 that after fetching all the rows, the query executed some additional operations, 
+including nested loops and hash joins. All of these additional steps and the much higher number of rows fetched resulted in the 
+additional elapsed time for the session. You can identify the exact time elapsed for each step shown by TIME=VALUE US in the 
+ROW SOURCE OPERATION output. Adding these times shows the total elapsed time of that occurrence of the query.
+
+Why did the execution plan change from using materialized views to using the underlying database tables when the SQL query 
+itself didn’t change? To get that answer, I examine the tkprof-formatted ann1_ora_11408.out trace output file. Notice this SQL 
+statement before the second execution of the SQL query:
+
+alter session
+set query_rewrite_enabled = false;
+
+This SQL statement disabled automatic query rewrite in the session, so during the second execution, the query had no choice but 
+to ignore the presence of the materialized view. This explains the change in the behavior of the query and the resultant 
+increase in elapsed time.
+
+For this tuning problem, the solution is to remove this ALTER SESSION statement to bring the behavior—and therefore the
+ performance—of the query execution back to normal.
+
+Future sessions
+In the preceding sections, you learned how to enable tracing in any session, provided that you know the SID and SERIAL# of that 
+session. When a new session is created, however, it may have already performed some activity by the time you get its SID and 
+SERIAL# and execute the DBMS_MONITOR_SESSION.SESSION_TRACE_ENABLE procedure. In that case, the already-performed activities 
+will not have been captured by tracing, but these very activities could be the cause of the performance issues. How do you 
+capture them? You need to enable tracing for sessions that do not exist yet, and the DBMS_MONITOR package provides a procedure 
+for that.
+
+To enable tracing on sessions that don’t exist yet, you first need to know the service name the session uses while connecting. 
+For this example, suppose the service name is APP. You execute the following SQL statement:
+
+Copy code snippet
+Copied to ClipboardError: Could not CopyCopied to ClipboardError: Could not Copy
+begin
+ dbms_monitor.serv_mod_act_trace_enable (
+  service_name => 'APP'
+  action_name  => dbms_monitor
+                  .all_actions,
+  waits        => true,
+  binds        => true
+ );
+end;
+begin
+ dbms_monitor.serv_mod_act_trace_enable (
+  service_name => 'APP'
+  action_name  => dbms_monitor
+                  .all_actions,
+  waits        => true,
+  binds        => true
+ );
+end;
+You can exit the session after executing this SQL statement, but the database instance will remember the command. When a new 
+session starts with the service name APP, the database immediately turns on tracing for that session automatically so that all 
+the activities are captured in the trace file.
+
+Consolidating trace files
+Most three-tier applications today use connection pools—groups of sessions connected to the database. An application uses any 
+available session from this pool when it needs database interaction, and it releases the session when the interaction is done. 
+If an application needs another database interaction later, it will use a second session from the pool. Similarly, a different 
+application may use a session that was used earlier by another application.
+
+If you want to trace all the activities of a specific application, you have to enable tracing in all the sessions the 
+application may use. You can achieve this by enabling trace for the service name used by that application, as explained in the 
+previous section. However, each session creates a separate trace file, so you will end up with many trace files. To understand 
+the activities of an application, you will need to analyze all the different session trace files. And because many applications 
+using the connection pool may have used the same session from that pool, a single trace file may contain the activities of many 
+applications. So to tune an application in this environment, you have to look at multiple trace files and filter out the
+ activities of the application you are tuning from the different files. Manually filtering application activities from multiple 
+ trace files is both difficult and error-prone.
+
+Fortunately, there is a much simpler way: Oracle Database comes with a utility called TRCSESS that extracts only the required 
+information from all trace files and produces a single relevant trace file.
+
+To use TRCSESS, go to the directory where all the trace files are generated and use the command
+
+trcsess
+output=alltraces.trc service=APP *.trc
+
+This command pulls the activities of all sessions connected with the service name APP and creates a file named alltraces.trc 
+from all the trace files in that directory. The format of alltraces.trc is exactly like that of a regular trace file, so you can 
+use tkprof with this file as an input to produce a human-readable version.
+
+In the case of an Oracle Real Application Clusters (Oracle RAC) database, there is more than one database server, so the trace 
+files for a load-balanced application might be generated in many locations. You can combine the trace files generated on 
+multiple hosts into a single file, using TRCSESS.
+
+Turning off tracing
+Tracing generates trace files on the database server file system, which slows database processing. Depending on the speed of 
+the file system, the performance impact may not be noticeable, but you should turn tracing off when it is not needed.
+
+To disable tracing for a session, execute the following:
+
+Copy code snippet
+Copied to ClipboardError: Could not CopyCopied to ClipboardError: Could not Copy
+begin
+  dbms_monitor.session_trace_disable (
+    session_id => <SID>, 
+    serial_num => <serial#>);
+end;
+begin
+  dbms_monitor.session_trace_disable (
+    session_id => <SID>, 
+    serial_num => <serial#>);
+end;
+Conclusion
+Tracing enables you to capture all the activities performed by the session and the corresponding performance metrics at a very 
+granular level, which reveals trouble spots that are otherwise not visible in session-level metrics. Tuning features and tools 
+enable you to create human-readable files from raw trace files and enable tracing on future sessions, and they help you extract 
+relevant information from multiple trace files (for use with connection pools and Oracle RAC).

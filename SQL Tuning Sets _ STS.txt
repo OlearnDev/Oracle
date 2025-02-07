@@ -1,0 +1,277 @@
+------------ SQL TUNING SETS (STS) 
+
+A *SQL Tuning Set (STS)* in Oracle is a database object that stores one or more SQL statements along with their execution 
+context, execution statistics, and execution plans. It is a powerful tool for performance tuning and analysis, as it allows you 
+to capture, store, and manage SQL workloads for later analysis, tuning, or sharing with Oracle tools like SQL Tuning Advisor or 
+SQL Plan Management (SPM).
+
+---
+
+### *Key Features of SQL Tuning Sets*
+1. *Capture SQL Workloads*:
+   - STS can capture SQL statements from various sources, such as:
+     - The *Automatic Workload Repository (AWR)*.
+     - The *Cursor Cache* (current SQL statements in memory).
+     - Another SQL Tuning Set.
+
+2. *Store SQL Information*:
+   - STS stores:
+     - SQL text.
+     - Execution context (e.g., bind variables, schema, module).
+     - Execution statistics (e.g., elapsed time, CPU time, buffer gets).
+     - Execution plans.
+
+3. *Analyze and Tune SQL*:
+   - STS can be used as input for Oracle tools like:
+     - *SQL Tuning Advisor*: Provides recommendations for improving SQL performance.
+     - *SQL Plan Management (SPM)*: Loads execution plans into the SQL Plan Baseline.
+
+4. *Transport and Share*:
+   - STS can be exported and imported between databases, making it useful for sharing SQL workloads for analysis or testing.
+
+---
+
+### *Common Use Cases for SQL Tuning Sets*
+1. *Performance Tuning*:
+   - Capture and analyze high-load or problematic SQL statements.
+   - Use SQL Tuning Advisor to get recommendations for improving SQL performance.
+
+2. *Workload Reproducibility*:
+   - Capture a representative workload from a production system and replay it in a test environment.
+
+3. *Plan Stability*:
+   - Load execution plans from an STS into the SQL Plan Baseline to ensure plan stability.
+
+4. *Benchmarking*:
+   - Compare SQL performance before and after changes (e.g., schema changes, database upgrades).
+
+---
+
+### *How to Create and Manage SQL Tuning Sets*
+#### 1. *Create a SQL Tuning Set*
+Use the DBMS_SQLTUNE.CREATE_SQLSET procedure to create an empty STS.
+
+sql
+BEGIN
+    DBMS_SQLTUNE.CREATE_SQLSET(
+        sqlset_name  => 'MY_STS',
+        description  => 'SQL Tuning Set for testing'
+    );
+END;
+/
+
+
+#### 2. *Load SQL Statements into the STS*
+You can load SQL statements from various sources, such as the cursor cache or AWR.
+
+*Example: Load SQL from the Cursor Cache*
+sql
+DECLARE
+    l_cursor  DBMS_SQLTUNE.SQLSET_CURSOR;
+BEGIN
+    OPEN l_cursor FOR
+        SELECT VALUE(p)
+        FROM TABLE(
+            DBMS_SQLTUNE.SELECT_CURSOR_CACHE(
+                basic_filter => 'sql_text LIKE ''%your_sql_text%'''
+            )
+        ) p;
+
+    DBMS_SQLTUNE.LOAD_SQLSET(
+        sqlset_name     => 'MY_STS',
+        populate_cursor => l_cursor
+    );
+END;
+/
+
+
+*Example: Load SQL from AWR*
+sql
+DECLARE
+    l_cursor  DBMS_SQLTUNE.SQLSET_CURSOR;
+BEGIN
+    OPEN l_cursor FOR
+        SELECT VALUE(p)
+        FROM TABLE(
+            DBMS_SQLTUNE.SELECT_WORKLOAD_REPOSITORY(
+                begin_snap => 1000,
+                end_snap   => 2000,
+                basic_filter => 'sql_id = ''your_sql_id'''
+            )
+        ) p;
+
+    DBMS_SQLTUNE.LOAD_SQLSET(
+        sqlset_name     => 'MY_STS',
+        populate_cursor => l_cursor
+    );
+END;
+/
+
+
+#### 3. *View SQL Tuning Set Contents*
+Query the DBA_SQLSET_STATEMENTS view to see the SQL statements in the STS.
+
+sql
+SELECT sql_id, sql_text, executions, elapsed_time, cpu_time
+FROM dba_sqlset_statements
+WHERE sqlset_name = 'MY_STS';
+
+
+#### 4. *Use STS with SQL Tuning Advisor*
+Submit the STS to SQL Tuning Advisor for analysis.
+
+sql
+DECLARE
+    l_task_name  VARCHAR2(30);
+BEGIN
+    l_task_name := DBMS_SQLTUNE.CREATE_TUNING_TASK(
+        sqlset_name  => 'MY_STS',
+        scope        => 'COMPREHENSIVE',
+        time_limit   => 3600,
+        task_name    => 'MY_TUNING_TASK',
+        description  => 'Tune SQL in MY_STS'
+    );
+
+    DBMS_SQLTUNE.EXECUTE_TUNING_TASK(task_name => l_task_name);
+END;
+/
+
+
+#### 5. *Export and Import STS*
+Export an STS to a staging table for transport to another database.
+
+sql
+BEGIN
+    DBMS_SQLTUNE.CREATE_STGTAB_SQLSET(
+        table_name  => 'STS_STAGING_TABLE',
+        schema_name => 'YOUR_SCHEMA'
+    );
+
+    DBMS_SQLTUNE.PACK_STGTAB_SQLSET(
+        sqlset_name          => 'MY_STS',
+        sqlset_owner         => 'SYS',
+        staging_table_name   => 'STS_STAGING_TABLE',
+        staging_schema_owner => 'YOUR_SCHEMA'
+    );
+END;
+/
+
+
+Import the STS from the staging table.
+
+sql
+BEGIN
+    DBMS_SQLTUNE.UNPACK_STGTAB_SQLSET(
+        sqlset_name          => 'MY_STS',
+        sqlset_owner         => 'SYS',
+        staging_table_name   => 'STS_STAGING_TABLE',
+        staging_schema_owner => 'YOUR_SCHEMA'
+    );
+END;
+/
+
+
+---
+
+### *Advantages of SQL Tuning Sets*
+- Provides a centralized way to manage SQL workloads.
+- Enables detailed analysis and tuning of SQL statements.
+- Facilitates sharing SQL workloads between environments.
+- Integrates with Oracle performance tools like SQL Tuning Advisor and SQL Plan Management.
+
+---
+
+By using SQL Tuning Sets, database administrators and developers can effectively capture, analyze, and optimize SQL workloads 
+to improve database performance
+
+-- **** ============ HOW LOAD PLAN FROM STS ==========================================		
+
+Loading SQL execution plans from SQL Tuning Sets (STS) into the SQL Plan Management (SPM) baseline in Oracle can be done using 
+the DBMS_SPM.LOAD_PLANS_FROM_SQLSET procedure. Below are the steps to achieve this:
+
+---
+
+### 1. *Identify the SQL Tuning Set and SQL ID*
+First, identify the SQL Tuning Set (STS) and the SQL ID of the statement(s) you want to load into the SPM baseline.
+
+sql
+SELECT sqlset_name, sql_id, plan_hash_value, executions, elapsed_time, cpu_time
+FROM dba_sqlset_statements
+WHERE sqlset_name = 'your_sqlset_name';
+
+
+---
+
+### 2. *Load Plans from the SQL Tuning Set*
+Use the DBMS_SPM.LOAD_PLANS_FROM_SQLSET procedure to load the plans from the SQL Tuning Set into the SPM baseline.
+
+sql
+DECLARE
+    l_plans_loaded  PLS_INTEGER;
+BEGIN
+    l_plans_loaded := DBMS_SPM.LOAD_PLANS_FROM_SQLSET(
+        sqlset_name  => 'your_sqlset_name',
+        sqlset_owner => 'your_sqlset_owner',
+        basic_filter => 'sql_id = ''your_sql_id''',
+        fixed        => 'NO',
+        enabled      => 'YES'
+    );
+    
+    DBMS_OUTPUT.PUT_LINE('Plans loaded: ' || l_plans_loaded);
+END;
+/
+
+
+---
+
+### *Parameters:*
+- sqlset_name: The name of the SQL Tuning Set.
+- sqlset_owner: The owner of the SQL Tuning Set (default is SYS if not specified).
+- basic_filter: A filter to select specific SQL statements (e.g., sql_id = 'your_sql_id' or plan_hash_value = 123456789).
+- fixed: If set to YES, the plan will be marked as fixed in the baseline.
+- enabled: If set to YES, the plan will be enabled in the baseline.
+
+---
+
+### 3. *Verify the Loaded Plans*
+After loading the plans, verify that they have been added to the SQL Plan Baseline by querying the DBA_SQL_PLAN_BASELINES view.
+
+sql
+SELECT sql_handle, plan_name, enabled, accepted, fixed
+FROM dba_sql_plan_baselines
+WHERE sql_text LIKE '%your_sql_text%';
+
+
+---
+
+### *Example:*
+Suppose you have a SQL Tuning Set named MY_STS owned by SYS, and you want to load the plan for a SQL ID 1234567890abcdef.
+
+sql
+DECLARE
+    l_plans_loaded  PLS_INTEGER;
+BEGIN
+    l_plans_loaded := DBMS_SPM.LOAD_PLANS_FROM_SQLSET(
+        sqlset_name  => 'MY_STS',
+        sqlset_owner => 'SYS',
+        basic_filter => 'sql_id = ''1234567890abcdef''',
+        fixed        => 'NO',
+        enabled      => 'YES'
+    );
+    
+    DBMS_OUTPUT.PUT_LINE('Plans loaded: ' || l_plans_loaded);
+END;
+/
+
+
+---
+
+### *Notes:*
+1. Ensure you have the necessary privileges to access the SQL Tuning Set and use the DBMS_SPM package.
+2. The basic_filter parameter allows you to load specific SQL statements or plans from the SQL Tuning Set.
+3. If you want to load all plans from the SQL Tuning Set, omit the basic_filter parameter.
+
+---
+
+By following these steps, you can load SQL execution plans from a SQL Tuning Set into the SQL Plan Baseline, allowing Oracle to 
+use these plans for future executions of the SQL statements.
